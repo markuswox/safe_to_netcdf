@@ -7,16 +7,7 @@
 # Created:       10.05.2019
 # Copyright:     (c) Norwegian Meteorological Institute, 2019
 # -------------------------------------------------------------------------------
-# import datetime as dt
-# import pytz
-# import xarray as xr
-# import logging
-# import sys
-# import pathlib
-# import numpy as np
-# import isodate
-# import utils as utils
-# import constants as cst
+
 
 import datetime as dt
 import pytz

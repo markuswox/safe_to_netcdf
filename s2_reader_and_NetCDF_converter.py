@@ -16,8 +16,6 @@
 #
 
 
-
-
 # Standard library imports
 import math
 import logging

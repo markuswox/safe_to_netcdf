@@ -16,42 +16,6 @@
 #
 # Need to use gdal 2.1.1-> to have support of the SAFE reader
 
-# # Standard library imports
-# import os
-# import re
-# import sys
-# import math
-# import logging
-# import pathlib
-# from pathlib import Path
-# from collections import defaultdict
-# import datetime as dt
-# import xml.etree.ElementTree as ET
-# import argparse
-# import io
-# from io import BytesIO
-# import tempfile
-
-# # Third-party library imports
-# import numpy as np
-# import netCDF4
-# from netCDF4 import Dataset
-# import xarray as xr
-# import rasterio
-# from rasterio.io import MemoryFile
-# import rioxarray as rio
-# import imageio.v3 as iio
-# import scipy.ndimage
-# import geopandas as geopd
-# import pyproj
-# from pyproj import CRS
-# from pyproj import CRS as PyCRS
-# from affine import Affine
-
-# # Custom library imports
-# import utils as utils
-# import constants as cst
-
 
 # Standard library imports
 import math

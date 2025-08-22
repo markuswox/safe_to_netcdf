@@ -342,15 +342,14 @@ def get_key(my_dict,val):
     return "There is no such Key"
 
 def write_to_geotiff(conversion_object, indir, product, outdir):
+        
 
-        # Creating a memory stream for creating temporary NetCDF-file to convert
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
 
             nc_out = tmpdir
             nc_out.parent.mkdir(parents=True, exist_ok=True)
 
-            
             # Write .SAFE data to temporary NetCDF
             if conversion_object.read_ok:
                 conversion_object.write_to_NetCDF(nc_out, outdir, product, 7)
@@ -359,48 +358,8 @@ def write_to_geotiff(conversion_object, indir, product, outdir):
 
                 ds = xr.open_dataset(nc_path)
 
-                logger.info('Writing GeoTIFFs from nc-file.')
+                write_geotiff(ds, outdir)
 
-                # For each band in .SAFE data we create a GeoTIFF-file
-                for variable, variable_item in ds.data_vars.items():
-                    if variable_item.dims == ('time', 'y', 'x') or variable_item.dims == ('rows', 'columns') :
-                        band = ds[variable]
-
-                        #Define lat/long 
-                        try:
-                            band = band.rio.set_spatial_dims('x', 'y')
-                        except:
-                            band = band.rio.set_spatial_dims('rows', 'columns')
-
-                        #If  CRS is not discovered, add manually
-                        if not band.rio.crs:
-                            band = band.rio.write_crs("EPSG:4326") # add epsg
-
-                        with MemoryFile() as memfile:
-                            with memfile.open(
-                                driver='GTiff',
-                                compress='LZW', # Change compression upon need
-                                height=band.shape[-2],
-                                width=band.shape[-1],
-                                count=1,
-                                dtype=band.dtype,
-                                transform=band.rio.transform()
-                                ) as dst:
-                                try:
-                                    dst.write(band.values)
-                                except:
-                                    dst.write(band.values.reshape((1, *band.shape))) # rewrap dimensions of band if not 3D
-
-
-
-                            
-                            outfile = Path(outdir / (variable + ".tif"))
-
-                            outfile.parent.mkdir(parents=True, exist_ok=True)
-
-                            # Save GeoTIFF to disk
-                            with open(outfile, "wb") as f:
-                                f.write(memfile.read()) 
             else:
                 AssertionError('Could not instantiate class')  
 
@@ -426,7 +385,61 @@ def parse_input(path):
     elif path.exists():
         # Return single path in a list
         return [str(path)]
+    elif str(path).endswith('.nc'):
+        return [str(path)]
     else:
         raise argparse.ArgumentTypeError(f"Invalid path or file: {path}")
 
 
+
+def write_geotiff(ds, outdir):
+
+    logger.info('Writing GeoTIFFs.')
+
+    # For each band in .SAFE data we create a GeoTIFF-file
+    for variable, variable_item in ds.data_vars.items():
+        if variable_item.dims == ('time', 'y', 'x') or variable_item.dims == ('rows', 'columns') :
+            band = ds[variable]
+            #Define lat/long 
+            try:
+                band = band.rio.set_spatial_dims('x', 'y')
+            except:
+                band = band.rio.set_spatial_dims('rows', 'columns')
+
+            #If  CRS is not discovered, add manually
+            if not band.rio.crs:
+                band = band.rio.write_crs("EPSG:4326") # add epsg
+
+            with MemoryFile() as memfile:
+                with memfile.open(
+                    driver='GTiff',
+                    compress='LZW', # Change compression upon need
+                    height=band.shape[-2],
+                    width=band.shape[-1],
+                    count=1,
+                    dtype=band.dtype,
+                    transform=band.rio.transform()
+                    ) as dst:
+                    try:
+                        dst.write(band.values)
+                    except:
+                        dst.write(band.values.reshape((1, *band.shape))) # rewrap dimensions of band if not 3D
+
+                
+                outfile = Path(outdir / (variable + ".tif"))
+
+                outfile.parent.mkdir(parents=True, exist_ok=True)
+
+                # Save GeoTIFF to disk
+                with open(outfile, "wb") as f:
+                    f.write(memfile.read()) 
+                
+
+def search_upwards(start_path, filename):
+    path = Path(start_path).resolve()
+    while path != path.parent:  # stop at filesystem root
+        candidate = path / filename
+        if candidate.exists():
+            return candidate
+        path = path.parent
+    return path

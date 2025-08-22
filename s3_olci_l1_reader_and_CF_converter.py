@@ -40,19 +40,22 @@ logger = logging.getLogger(__name__)
 def parse_args():
     parser = argparse.ArgumentParser(
     formatter_class=argparse.RawDescriptionHelpFormatter,
-            description='Script to read and convert Sentinel 3 data to NetCDF or GeoTIFF. Inputs are: \n'+
-            'input: either a list with paths to the sentinel data or a path to a directory containing sentinel data\n'+
+            description='Script to read and convert Sentinel data to NetCDF or GeoTIFF. Inputs are: \n'+
+            'input: either a list with paths to the sentinel data, a path to a directory containing sentinel data or path to NetCDF to convert to GeoTIFF\n'+
             'output (not mandatory): either the path only of where to write the parent file or the path + parent filename or the parent filename only\n'+
             'format: either NetCDF or GeoTIFF (if GeoTIFF, output is a directory containing files for each individual raster band)\n'+
-            'e.g. s3_olci_l1_reader_and_CF_converter.py -i /path/to/sentinel/data -f NetCDF -o /path/to/output.nc \n'+
-            'e.g. s3_olci_l1_reader_and_CF_converter.py -i /path/to/sentinel/data -f GeoTIFF -o /path/to/outputfiles.txt \n'+
+            'data_type: (not mandatory) either Sentinel1 (S1), Sentinel 2 (S2), or Sentinel 3 (S3)\n'+
+            'e.g. S3_reader_and_converter_NetCDF_GeoTIFF -i /path/to/sentinel/data -f NetCDF -o /path/to/output.nc - dt S3\n'+
+            'e.g. S3_reader_and_converter_NetCDF_GeoTIFF -i /path/to/sentinel/data -f GeoTIFF -o /path/to/outputfiles -dt S3\n'+
+            'e.g. S3_reader_and_converter_NetCDF_GeoTIFF -i /path/to/sentinel/data -f GeoTIFF -o /path/to/outputfiles -dt S3\n --nc_location /path/to/ncfile'+
             '...'
             )
     
     parser.add_argument(
         "--input", '-i',
+        required=True,
         type=utils.parse_input,
-        help="Required: either a .txt file with one /path/to/SAFE.zip per line, or a single valid /path/to/SAFE.zip"
+        help="Required: either a .txt file with one /path/to/SAFE.zip per line, a single valid /path/to/SAFE.zip or a NetCDF to directly convert to GeoTIFF."
     )
 
     parser.add_argument(
@@ -69,8 +72,13 @@ def parse_args():
         help="Path to the output directory. If not provided; current directory"
     )
 
-    return parser.parse_args()
+    parser.add_argument(
+        '--data_type', '-dt',
+        choices=['S1', 'S2', 'S3'],
+        help='Type of sentinel data to read and convert.'
+    )
 
+    return parser.parse_args()
 
 
 class Sentinel3_olci_reader_and_CF_converter:
@@ -334,26 +342,44 @@ def main():
         outdir.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            if product.startswith("S3") or args.data_type == 'S3':
+            assert args.format == 'geotiff'
+            if path.endswith('.nc'):
+                nc_path = path
+                logger.debug(f'"{product}.nc" found on given location.')
+            else:
+                indir = Path(path).parent
+                if list(indir.rglob(product + '.nc')):
+                    nc_path = list(indir.rglob(product + '.nc'))[0]
+                else:
+                    nc_path = utils.search_upwards(indir, product + '.nc')    #assuming there is only one matching nc-file, or that if more than one, they are identical
+            ds = xr.open_dataset(nc_path)
+            logger.debug(f'"{product}.nc" found on disk. Writing GeoTiff from file.')
 
-                conversion_object = Sentinel3_olci_reader_and_CF_converter(
-                    product=product,
-                    indir=indir,
-                    outdir=outdir)
+            utils.write_geotiff(ds, outdir)
+
+        except:
+            logger.debug(f'"{product}.nc" not found on disk. Writing from SAFE.zip.')
+            try:
+                if product.startswith("S3") or args.data_type == 'S3':
+
+                    conversion_object = Sentinel3_olci_reader_and_CF_converter(
+                        product=product,
+                        indir=indir,
+                        outdir=outdir)
+                    
+            except (AttributeError, TypeError, FileNotFoundError) as e:
+                print(f"Error during Sentinel-3 conversion: {e}")
                 
-        except (AttributeError, TypeError, FileNotFoundError) as e:
-            print(f"Error during Sentinel-3 conversion: {e}")
+            conversion_object.run()
+
+            if args.format == 'geotiff':
             
-        conversion_object.run()
+                utils.write_to_geotiff(conversion_object, indir, product, outdir)                    
 
-        if args.format == 'geotiff':
-        
-            utils.write_to_geotiff(conversion_object, indir, product, outdir)                    
+            if args.format == 'netcdf':
 
-        if args.format == 'netcdf':
-
-            if conversion_object.read_ok:
-                conversion_object.write_to_NetCDF(outdir, outdir, product, 7)
+                if conversion_object.read_ok:
+                    conversion_object.write_to_NetCDF(outdir, outdir, product, 7)
 
 
 

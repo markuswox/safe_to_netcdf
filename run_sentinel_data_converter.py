@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 import utils as utils
 import argparse
+import xarray as xr
 from s1_reader_and_NetCDF_converter import Sentinel1_reader_and_NetCDF_converter
 from s2_reader_and_NetCDF_converter import Sentinel2_reader_and_NetCDF_converter
 from s3_olci_l1_reader_and_CF_converter import Sentinel3_olci_reader_and_CF_converter
@@ -17,12 +18,13 @@ def parse_args():
     parser = argparse.ArgumentParser(
     formatter_class=argparse.RawDescriptionHelpFormatter,
             description='Script to read and convert Sentinel data to NetCDF or GeoTIFF. Inputs are: \n'+
-            'input: either a list with paths to the sentinel data or a path to a directory containing sentinel data\n'+
+            'input: either a list with paths to the sentinel data, a path to a directory containing sentinel data or path to NetCDF to convert to GeoTIFF\n'+
             'output (not mandatory): either the path only of where to write the parent file or the path + parent filename or the parent filename only\n'+
             'format: either NetCDF or GeoTIFF (if GeoTIFF, output is a directory containing files for each individual raster band)\n'+
             'data_type: (not mandatory) either Sentinel1 (S1), Sentinel 2 (S2), or Sentinel 3 (S3)\n'+
-            'e.g. S2_reader_and_converter_NetCDF_GeoTIFF -i /path/to/sentinel/data -f NetCDF -o /path/to/output.nc - dt S2\n'+
-            'e.g. S2_reader_and_converter_NetCDF_GeoTIFF -i /path/to/sentinel/data -f GeoTIFF -o /path/to/outputfiles -dt S2\n'+
+            'e.g. S3_reader_and_converter_NetCDF_GeoTIFF -i /path/to/sentinel/data -f NetCDF -o /path/to/output.nc - dt S3\n'+
+            'e.g. S3_reader_and_converter_NetCDF_GeoTIFF -i /path/to/sentinel/data -f GeoTIFF -o /path/to/outputfiles -dt S3\n'+
+            'e.g. S3_reader_and_converter_NetCDF_GeoTIFF -i /path/to/sentinel/data -f GeoTIFF -o /path/to/outputfiles -dt S3\n --nc_location /path/to/ncfile'+
             '...'
             )
     
@@ -30,7 +32,7 @@ def parse_args():
         "--input", '-i',
         required=True,
         type=utils.parse_input,
-        help="Required: either a .txt file with one /path/to/SAFE.zip per line, or a single valid /path/to/SAFE.zip"
+        help="Required: either a .txt file with one /path/to/SAFE.zip per line, a single valid /path/to/SAFE.zip or a NetCDF to directly convert to GeoTIFF."
     )
 
     parser.add_argument(
@@ -70,48 +72,70 @@ def main():
 
     args = parse_args()
 
+    # assert args.nc_loc or args.input, "User must provide either location of NetCDF to convert to GeoTIFFs or path to SAFE.zip."
+    
+    # if args.nc_loc and not args.product:
+    #     raise TypeError("Unknown product to convert. Please parse --product 'sentinel_product'")
+
     for path in args.input:
 
-        indir = Path(path).parent
+        #indir = Path(path).parent
         product = str(os.path.splitext(os.path.basename(path))[0])
         outdir = Path(args.output)
         outdir.parent.mkdir(parents=True, exist_ok=True)
 
-        
-        if product.startswith("S1") or args.data_type == 'S1':
-            print(f'Product: {product}')
-            print(f'Indir: {indir}')
-            print(f'Outdir: {outdir}')
-            conversion_object = Sentinel1_reader_and_NetCDF_converter(
+        try:
+            assert args.format == 'geotiff'
+            if path.endswith('.nc'):
+                nc_path = path
+                logger.debug(f'"{product}.nc" found on given location.')
+            else:
+                indir = Path(path).parent
+                if list(indir.rglob(product + '.nc')):
+                    nc_path = list(indir.rglob(product + '.nc'))[0]
+                else:
+                    nc_path = utils.search_upwards(indir, product + '.nc')    #assuming there is only one matching nc-file, or that if more than one, they are identical
+            ds = xr.open_dataset(nc_path)
+            logger.debug(f'"{product}.nc" found on disk. Writing GeoTiff from file.')
+
+            utils.write_geotiff(ds, outdir)
+
+        except:
+            logger.debug(f'"{product}.nc" not found on disk. Writing from SAFE.zip.')
+
+            if product.startswith("S1") or args.data_type == 'S1':
+                print(f'Product: {product}')
+                print(f'Indir: {indir}')
+                print(f'Outdir: {outdir}')
+                conversion_object = Sentinel1_reader_and_NetCDF_converter(
+                    product=product,
+                    indir=indir,
+                    outdir=outdir)
+
+            if product.startswith("S2") or args.data_type == 'S2':
+                conversion_object = Sentinel2_reader_and_NetCDF_converter(
                 product=product,
                 indir=indir,
-                outdir=outdir)
+                outdir=outdir
+                )
 
-        if product.startswith("S2") or args.data_type == 'S2':
-            conversion_object = Sentinel2_reader_and_NetCDF_converter(
-            product=product,
-            indir=indir,
-            outdir=outdir
-            )
+            if product.startswith("S3") or args.data_type == 'S3':
 
-        if product.startswith("S3") or args.data_type == 'S3':
+                conversion_object = Sentinel3_olci_reader_and_CF_converter(
+                    product=product,
+                    indir=indir,
+                    outdir=outdir)
+                
+            conversion_object.run()
 
-            conversion_object = Sentinel3_olci_reader_and_CF_converter(
-                product=product,
-                indir=indir,
-                outdir=outdir)
+            if args.format == 'geotiff':
             
-        conversion_object.run()
+                utils.write_to_geotiff(conversion_object, indir, product, outdir)                    
 
-        if args.format == 'geotiff':
-        
-            utils.write_to_geotiff(conversion_object, indir, product, outdir)                    
+            if args.format == 'netcdf':
 
-        if args.format == 'netcdf':
-
-            if conversion_object.read_ok:
-                conversion_object.write_to_NetCDF(outdir, outdir, product, 7)
-
+                if conversion_object.read_ok:
+                    conversion_object.write_to_NetCDF(outdir, outdir, product, 7)
 
 
 

@@ -1,0 +1,2 @@
+nc_database: #database for Sentinel nc files
+  - /home/mawox7977/Documents/MET/datacube_project/dummy_netcdf_database

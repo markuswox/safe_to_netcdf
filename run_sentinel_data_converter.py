@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 import utils as utils
 import argparse
+import yaml
 import xarray as xr
 from s1_reader_and_NetCDF_converter import Sentinel1_reader_and_NetCDF_converter
 from s2_reader_and_NetCDF_converter import Sentinel2_reader_and_NetCDF_converter
@@ -79,24 +80,18 @@ def main():
 
     for path in args.input:
 
-        #indir = Path(path).parent
+        indir = Path(path).parent
         product = str(os.path.splitext(os.path.basename(path))[0])
         outdir = Path(args.output)
         outdir.parent.mkdir(parents=True, exist_ok=True)
+        #print(path)
 
         try:
             assert args.format == 'geotiff'
             if path.endswith('.nc'):
                 nc_path = path
-                logger.debug(f'"{product}.nc" found on given location.')
-            else:
-                indir = Path(path).parent
-                if list(indir.rglob(product + '.nc')):
-                    nc_path = list(indir.rglob(product + '.nc'))[0]
-                else:
-                    nc_path = utils.search_upwards(indir, product + '.nc')    #assuming there is only one matching nc-file, or that if more than one, they are identical
             ds = xr.open_dataset(nc_path)
-            logger.debug(f'"{product}.nc" found on disk. Writing GeoTiff from file.')
+            logger.debug(f'"{product}.nc" found on disk. Writing GeoTIFF from file.')
 
             utils.write_geotiff(ds, outdir)
 

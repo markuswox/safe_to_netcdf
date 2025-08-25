@@ -19,7 +19,7 @@ import tempfile
 import xarray as xr
 import re
 import argparse
-
+import os
 
 
 logger = logging.getLogger(__name__)
@@ -376,21 +376,32 @@ def extract_band_code(filename):
 
 
 def parse_input(path):
-    path = Path(path)
-    if path.suffix == ".txt" and path.is_file():
-        # Read file and return list of paths
-        with path.open() as f:
-            return [line.strip() for line in f if line.strip()]
-        logger.info('Path is list!')
-    elif path.exists():
+    with open('config.yaml', 'r') as file:
+        config = yaml.safe_load(file)
+    try:
+        nc_path = Path(derive_nc_path(str(os.path.splitext(os.path.basename(path))[0]), config['nc_database'][0]))
+        
+        assert nc_path.exists()
+
+        logger.debug('Extracting nc-file from database.')
+
         # Return single path in a list
-        return [str(path)]
-    elif str(path).endswith('.nc'):
-        return [str(path)]
-    else:
-        raise argparse.ArgumentTypeError(f"Invalid path or file: {path}")
+        return [str(nc_path)]
 
+    except:
+        path = Path(path)
 
+        if path.suffix == ".txt" and path.is_file():
+            # Read file and return list of paths
+            with path.open() as f:
+                return [line.strip() for line in f if line.strip()]
+            logger.info('Path is list!')
+        elif path.exists():
+            # Return single path in a list
+            return [str(path)]
+        else:
+            raise argparse.ArgumentTypeError(f"Invalid path or file: {path}")
+        
 
 def write_geotiff(ds, outdir):
 
@@ -435,11 +446,28 @@ def write_geotiff(ds, outdir):
                     f.write(memfile.read()) 
                 
 
-def search_upwards(start_path, filename):
-    path = Path(start_path).resolve()
-    while path != path.parent:  # stop at filesystem root
-        candidate = path / filename
-        if candidate.exists():
-            return candidate
-        path = path.parent
-    return path
+
+def derive_nc_path(product_name, nc_root_path):
+    platform = product_name.split('_')[0]
+    mission = product_name[0:2]
+    if mission == 'S1':
+        date = product_name[17:25]
+        mode = product_name[4:6]
+    elif mission == 'S2':
+        date = product_name[11:19]
+    elif mission == 'S3':
+        date = product_name[16:24]
+        filename_product_type = product_name[4:15]
+    elif mission == 'S5':
+        date = product_name[20:28]
+        filename_product_type = product_name[9:19]
+    year = date[:4]
+    month = date[4:6]
+    day = date[6:]
+    if mission in ['S3', 'S5']:
+        nc_path = f'{nc_root_path}/{platform}/{year}/{month}/{day}/{filename_product_type}/{product_name}.nc'
+    elif mission == 'S1':
+        nc_path = f'{nc_root_path}/{platform}/{year}/{month}/{day}/{mode}/{product_name}.nc'
+    elif mission == 'S2':
+        nc_path = f'{nc_root_path}/{platform}/{year}/{month}/{day}/{product_name}.nc'
+    return nc_path
